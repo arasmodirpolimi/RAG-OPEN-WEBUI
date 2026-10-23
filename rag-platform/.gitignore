@@ -1,0 +1,12 @@
+# Inherited from root .gitignore: target/, .env, .idea/, *.iml, *.class, *.jar, data/, logs/, OS files
+
+# Uploaded test documents (not source code)
+*.pdf
+*.docx
+*.doc
+*.xlsx
+*.pptx
+*.jpg
+*.jpeg
+*.png
+*.tiff

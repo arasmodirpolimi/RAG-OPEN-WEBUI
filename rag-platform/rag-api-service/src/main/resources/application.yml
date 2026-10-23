@@ -1,0 +1,26 @@
+spring:
+  application:
+    name: rag-api
+  config:
+    import: classpath:rag-common.yml
+  flyway:
+    enabled: true          # only rag-api migrates the schema
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 110MB
+  mvc:
+    async:
+      request-timeout: 10m # streamed answers run on an async request
+  threads:
+    virtual:
+      enabled: true
+
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health

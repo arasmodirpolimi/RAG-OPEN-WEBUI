@@ -1,0 +1,143 @@
+# Local test stack. Start: docker compose up -d --build   (see README.md for the full procedure)
+name: rag-platform
+
+x-rag-env: &rag-env
+  DB_URL: jdbc:postgresql://postgres:5432/rag
+  DB_USER: rag
+  DB_PASSWORD: ${POSTGRES_PASSWORD:-rag}
+  RABBITMQ_HOST: rabbitmq
+  RABBITMQ_USER: rag
+  RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-rag}
+  RAG_COLLECTIONS: ${RAG_COLLECTIONS:-contratti,normativa}
+  RAG_OPENSEARCH_URL: http://opensearch:9200
+  RAG_OLLAMA_URL: http://ollama:11434
+  RAG_OLLAMA_EMBEDDING_MODEL: ${EMBEDDING_MODEL:-bge-m3}
+  RAG_OLLAMA_CHAT_MODEL: ${CHAT_MODEL:-qwen2.5:7b}
+  RAG_LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
+  RAG_ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  RAG_ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-5-5}
+  RAG_RERANKER_URL: http://tei-rerank:80
+  RAG_DOCLING_URL: http://docling:5001
+  RAG_STORAGE_ROOT: /data/files
+  RAG_OPENAI_API_KEY: ${RAG_OPENAI_API_KEY:?set RAG_OPENAI_API_KEY in .env}
+  RAG_ADMIN_API_KEY: ${RAG_ADMIN_API_KEY:?set RAG_ADMIN_API_KEY in .env}
+
+services:
+  # ---------------------------------------------------------------- user interface
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main   # pin a release tag for anything beyond local testing
+    ports: ["3000:8080"]
+    environment:
+      OPENAI_API_BASE_URL: http://rag-api:8080/v1
+      OPENAI_API_KEY: ${RAG_OPENAI_API_KEY}
+      ENABLE_OLLAMA_API: "false"               # only the RAG models are offered to users
+      ENABLE_TITLE_GENERATION: "false"         # these background tasks would otherwise be sent
+      ENABLE_FOLLOW_UP_GENERATION: "false"     # to the RAG endpoint and trigger retrievals
+      ENABLE_TAGS_GENERATION: "false"
+      ENABLE_FORWARD_USER_INFO_HEADERS: "true" # X-OpenWebUI-User-* headers reach rag-api
+    volumes: [openwebui:/app/backend/data]
+    depends_on:
+      rag-api: {condition: service_healthy}
+
+  # ---------------------------------------------------------------- Java services
+  rag-api:
+    build: {context: ., dockerfile: rag-api-service/Dockerfile}
+    ports: ["8080:8080"]
+    environment: *rag-env
+    volumes: [files:/data/files]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    depends_on:
+      postgres: {condition: service_healthy}
+      rabbitmq: {condition: service_healthy}
+      opensearch: {condition: service_healthy}
+      ollama: {condition: service_started}
+      tei-rerank: {condition: service_started}
+
+  rag-ingestion:
+    build: {context: ., dockerfile: rag-ingestion-service/Dockerfile}
+    environment: *rag-env
+    volumes: [files:/data/files]
+    depends_on:
+      rag-api: {condition: service_healthy}     # schema migrated and index created by rag-api
+      docling: {condition: service_started}
+
+  # ---------------------------------------------------------------- AI services
+  docling:
+    image: quay.io/docling-project/docling-serve-cpu:latest   # pin a version for reproducibility
+    ports: ["5001:5001"]
+    environment:
+      DOCLING_SERVE_ENABLE_UI: "true"          # playground at http://localhost:5001/ui
+      DOCLING_SERVE_MAX_SYNC_WAIT: "900"       # CPU OCR of long PDFs can exceed the 120 s default
+
+  ollama:
+    image: ollama/ollama
+    ports: ["11434:11434"]
+    volumes: [ollama:/root/.ollama]
+
+  ollama-init:                                 # one-shot: downloads the models, then exits
+    image: ollama/ollama
+    environment:
+      OLLAMA_HOST: ollama:11434
+    entrypoint: ["/bin/sh", "-c", "until ollama list >/dev/null 2>&1; do sleep 2; done; ollama pull ${EMBEDDING_MODEL:-bge-m3} && ollama pull ${CHAT_MODEL:-qwen2.5:7b}"]
+    depends_on: [ollama]
+    restart: "no"
+
+  tei-rerank:
+    image: ${TEI_IMAGE:-ghcr.io/huggingface/text-embeddings-inference:cpu-1.9}
+    command: ["--model-id", "${RERANK_MODEL:-Alibaba-NLP/gte-multilingual-reranker-base}"]
+    ports: ["8088:80"]
+    volumes: [tei:/data]
+
+  # ---------------------------------------------------------------- data services
+  opensearch:
+    image: opensearchproject/opensearch:3.5.0
+    ports: ["9200:9200"]
+    environment:
+      discovery.type: single-node
+      DISABLE_SECURITY_PLUGIN: "true"          # local only; enable security outside your machine
+      DISABLE_INSTALL_DEMO_CONFIG: "true"
+      OPENSEARCH_JAVA_OPTS: "-Xms1g -Xmx1g"
+    volumes: [opensearch:/usr/share/opensearch/data]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9200/_cluster/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: rag
+      POSTGRES_USER: rag
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rag}
+    volumes: [postgres:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rag -d rag"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  rabbitmq:
+    image: rabbitmq:4-management
+    ports: ["15672:15672"]                     # management UI (rag / rag by default)
+    environment:
+      RABBITMQ_DEFAULT_USER: rag
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-rag}
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+
+volumes:
+  openwebui: {}
+  files: {}
+  ollama: {}
+  tei: {}
+  opensearch: {}
+  postgres: {}

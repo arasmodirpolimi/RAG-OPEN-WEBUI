@@ -1,0 +1,28 @@
+spring:
+  application:
+    name: rag-ingestion
+  config:
+    import: classpath:rag-common.yml
+  flyway:
+    enabled: false         # schema is owned and migrated by rag-api
+  rabbitmq:
+    listener:
+      simple:
+        prefetch: 1
+        concurrency: 1
+        max-concurrency: 2     # parsing/OCR is CPU-heavy; raise only with more CPU
+        default-requeue-rejected: false
+        retry:
+          enabled: true
+          max-attempts: 3
+          initial-interval: 10s
+          multiplier: 2
+
+server:
+  port: 8081
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
