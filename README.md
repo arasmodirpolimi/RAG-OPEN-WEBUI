@@ -21,7 +21,7 @@ in **Open WebUI**. All document intelligence runs in two Java 21 / Spring Boot s
 
 | Service | Role |
 |---|---|
-| `open-webui` | Chat UI. Sees each collection as a model `rag-<collection>`. |
+| `open-webui` | Chat UI. Sees each collection as a model `rag-<collection>`, plus a `chat` model for direct LLM conversation. |
 | `rag-api` | OpenAI-compatible chat endpoint, hybrid retrieval, reranking, grounded answers with citations; document upload API; DB migration; index creation. |
 | `rag-ingestion` | Queue consumer: parse (Docling) → chunk → embed → index. |
 | `docling` | Converts PDF/DOCX/images to Markdown, with OCR for scans and photos. |
@@ -88,13 +88,28 @@ size-based splits; tables are separate chunks (split by rows, repeating the head
 repeated on most pages (letterheads, fixed footers) are removed. The section path is prepended to the
 text for embeddings and reranking, and indexed (boosted) for BM25.
 
-**Question answering**
+**Question answering (RAG models)**
 
 1. Open WebUI → `POST /v1/chat/completions` (`model = rag-<collection>`, full history, `stream: true`).
 2. `QueryRewritingAgent`: follow-ups become standalone questions (first questions skip the LLM).
 3. `HybridRetrievalAgent`: BM25 (`multi_match` on `text`, `text.en`, `section_path^2`) and k-NN (filter inside the `knn` clause) in parallel, 50 each → RRF (k = 60) → top 30 → TEI rerank → top 6 (optional score threshold).
 4. No sources → fixed "not found" reply, **the LLM is not called**. Otherwise `AnswerGenerationAgent` streams an answer that may only use the numbered sources and must cite them as `[n]`.
 5. `rag-api` streams OpenAI `chat.completion.chunk` events and appends a **Fonti / Sources** list (file, page(s), section).
+
+**General chat (no documents)**
+
+Selecting the `chat` model in Open WebUI sends the conversation directly to the LLM (Ollama or
+Claude, depending on `LLM_PROVIDER`) with no retrieval, chunking, or citation. This is useful for
+general questions that do not require document grounding. The model name is configurable via
+`rag.answer.general-chat-model` (env `RAG_ANSWER_GENERAL_CHAT_MODEL`, default `chat`).
+
+**Unified model (chat + RAG)**
+
+The `assistant` model combines both behaviours: it searches **all** configured collections for
+relevant sources. When matches are found, the answer is grounded with citations (like the `rag-*`
+models); when no documents match, the conversation is forwarded directly to the LLM (like `chat`).
+This gives a single model that works for general conversation and document Q&A. Configurable via
+`rag.answer.unified-model` (env `RAG_ANSWER_UNIFIED_MODEL`, default `assistant`).
 
 ---
 

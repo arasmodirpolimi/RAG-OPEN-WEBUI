@@ -12,17 +12,15 @@ import com.ragplatform.agent.port.VectorSearchPort;
 import com.ragplatform.agent.retrieval.HybridRetrievalAgent;
 import com.ragplatform.agent.retrieval.RetrievalSettings;
 import com.ragplatform.agent.retrieval.RrfFusion;
-import com.ragplatform.application.port.in.AnswerQuestionUseCase;
-import com.ragplatform.application.port.in.ListCollectionsUseCase;
+import com.ragplatform.application.port.in.UnifiedChatUseCase;
 import com.ragplatform.application.port.in.QueryDocumentsUseCase;
 import com.ragplatform.application.port.in.ReindexDocumentUseCase;
 import com.ragplatform.application.port.in.UploadDocumentUseCase;
 import com.ragplatform.application.port.out.DocumentRepositoryPort;
 import com.ragplatform.application.port.out.FileStoragePort;
 import com.ragplatform.application.port.out.IngestionQueuePort;
-import com.ragplatform.application.service.AnswerQuestionService;
 import com.ragplatform.application.service.CollectionPolicy;
-import com.ragplatform.application.service.ListCollectionsService;
+import com.ragplatform.application.service.UnifiedChatService;
 import com.ragplatform.application.service.QueryDocumentsService;
 import com.ragplatform.application.service.ReindexDocumentService;
 import com.ragplatform.application.service.UploadDocumentService;
@@ -87,11 +85,11 @@ public class ApiCompositionRoot {
 
     // ---- Application layer (use cases)
     @Bean
-    AnswerQuestionUseCase answerQuestionUseCase(QueryRewritingAgent rewriter, HybridRetrievalAgent retriever,
-                                                AnswerGenerationAgent generator, CollectionPolicy collections,
-                                                RagProperties props) {
-        return new AnswerQuestionService(rewriter, retriever, generator, collections,
-                props.answer().notFoundMessage());
+    UnifiedChatUseCase unifiedChatUseCase(QueryRewritingAgent rewriter, HybridRetrievalAgent retriever,
+                                           AnswerGenerationAgent generator, StreamingCompletionPort streaming,
+                                           CollectionPolicy collections, RagProperties props) {
+        return new UnifiedChatService(rewriter, retriever, generator, streaming, collections,
+                props.retrieval().finalTopK());
     }
 
     @Bean
@@ -109,11 +107,6 @@ public class ApiCompositionRoot {
     @Bean
     QueryDocumentsUseCase queryDocumentsUseCase(DocumentRepositoryPort repository, CollectionPolicy collections) {
         return new QueryDocumentsService(repository, collections);
-    }
-
-    @Bean
-    ListCollectionsUseCase listCollectionsUseCase(CollectionPolicy collections) {
-        return new ListCollectionsService(collections);
     }
 
     @Bean

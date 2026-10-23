@@ -59,4 +59,7 @@ rag:
     admin-api-key: ${RAG_ADMIN_API_KEY:change-me-admin}
   answer:
     model-prefix: "rag-"
+    general-chat-model: "chat"
+    unified-model: "assistant"
+    upload-required-message: "Per poter rispondere, carica un documento PDF. / To answer your question, please upload a PDF document first."
     not-found-message: "Non ho trovato questa informazione nei documenti disponibili. / I could not find this information in the available documents."

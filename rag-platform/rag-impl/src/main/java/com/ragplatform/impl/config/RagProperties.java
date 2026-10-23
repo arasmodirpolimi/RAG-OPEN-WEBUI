@@ -55,6 +55,7 @@ public record RagProperties(
     public record Security(String openaiApiKey, String adminApiKey) {
     }
 
-    public record Answer(String notFoundMessage, String modelPrefix) {
+    public record Answer(String notFoundMessage, String modelPrefix, String generalChatModel, String unifiedModel,
+                          String uploadRequiredMessage) {
     }
 }
